@@ -73,6 +73,9 @@ class LoggingUtility:
             )
         )
         
+        # Check if file exists and has content to determine if we need a separator
+        file_exists = os.path.isfile(log_file) and os.path.getsize(log_file) > 0
+        
         # Create a new file handler
         file_handler = logging.FileHandler(log_file, mode='a')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
@@ -88,6 +91,11 @@ class LoggingUtility:
         self.logger.addHandler(file_handler)
         self.logger.setLevel(getattr(logging, config.get("log_level", "INFO")))
         
+        # Add separator if file already has content
+        if file_exists:
+            with open(log_file, 'a') as f:
+                f.write("\n\n" + "="*80 + "\n\n")
+        
         # Log the configuration
         self.logger.info(f"Starting RAG pipeline with tool={self.active_tool}, "
                         f"embedding={self.embedding_provider}, "
@@ -100,6 +108,11 @@ class LoggingUtility:
         Args:
             query: The query being processed (if applicable)
         """
+        # Add a separator for the new run
+        self.logger.info("="*80)
+        self.logger.info("NEW RUN STARTED")
+        self.logger.info("="*80)
+        
         self.current_run = {
             "start_time": datetime.now(),
             "end_time": None,
@@ -146,6 +159,11 @@ class LoggingUtility:
         
         # Save metrics
         self._save_metrics()
+        
+        # Add a separator for the end of the run
+        self.logger.info("="*80)
+        self.logger.info("RUN COMPLETED")
+        self.logger.info("="*80)
         
         return self.current_run["duration"]
     

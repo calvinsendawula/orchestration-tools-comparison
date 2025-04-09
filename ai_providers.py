@@ -15,13 +15,18 @@ from config_loader import config
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Get configured providers to determine which warnings to show
+config_embedding_provider = config.get("embedding.provider", "local")
+config_inference_provider = config.get("inference.provider", "local")
+
 # Try to import optional dependencies
 try:
     from google import genai
     HAVE_GEMINI = True
 except ImportError:
     HAVE_GEMINI = False
-    logger.warning("Google GenerativeAI not installed. Gemini provider will not be available.")
+    if config_embedding_provider == "gemini" or config_inference_provider == "gemini":
+        logger.warning("Google GenerativeAI not installed. Gemini provider will not be available.")
 
 try:
     from langchain.embeddings import GoogleGenerativeAIEmbeddings
@@ -29,7 +34,9 @@ try:
     HAVE_LANGCHAIN_GEMINI = True
 except ImportError:
     HAVE_LANGCHAIN_GEMINI = False
-    logger.warning("LangChain GoogleGenerativeAI integrations not installed.")
+    use_langchain = config.get("libraries.use_langchain", False)
+    if use_langchain and (config_embedding_provider == "gemini" or config_inference_provider == "gemini"):
+        logger.warning("LangChain GoogleGenerativeAI integrations not installed.")
 
 class EmbeddingProvider:
     """Class for handling embeddings using different providers"""
@@ -212,7 +219,7 @@ class InferenceProvider:
     def __init__(self):
         """Initialize the inference provider based on configuration"""
         self.provider_name = config.get("inference.provider", "local")
-        self.model_name = config.get("inference.model", "gemini-1.5-pro")
+        self.model_name = config.get("inference.model", "gemini-2.0-flash")
         self.temperature = config.get("inference.temperature", 0.2)
         self.max_tokens = config.get("inference.max_tokens", 1024)
         self.use_langchain = config.get("libraries.use_langchain", False)
