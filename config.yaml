@@ -1,4 +1,4 @@
-# Orchestration Tools Comparison Configuration
+﻿# Orchestration Tools Comparison Configuration
 
 # General Settings
 data_directory: "./data"  # Shared data directory for all projects
@@ -44,7 +44,7 @@ logging:
 orchestration:
   active_tool: "base"  # Options: "base", "airflow", "dagster", "flyte", "kubeflow", "mage"
   run_ui: true  # Run the orchestration tool's UI if available
-  
+
 # Tool-specific Configurations
 airflow:
   dag_directory: "./airflow/dags"
@@ -63,4 +63,5 @@ kubeflow:
   namespace: "kubeflow"
 
 mage:
-  project_name: "nutrition_rag" 
+  project_name: "nutrition_rag"
+
