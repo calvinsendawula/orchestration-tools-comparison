@@ -1,0 +1,99 @@
+# Environment
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Data and processed files
+data/processed/*/
+*.npy
+*.npz
+*.pkl
+*.joblib
+*.json
+*.h5
+*.bin
+*.vec
+*.tmp
+
+# Sample data (committed separately)
+data/raw/*.txt
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Orchestration tools specific
+# Airflow
+airflow/logs/
+airflow/airflow.db
+airflow/airflow-webserver.pid
+airflow/webserver_config.py
+
+# Dagster
+dagster_home/
+dagster/dagster.yaml
+dagster/.dagster/
+
+# Kubeflow
+.kubeflow/
+kubeflow/auth/
+kubeflow/.kube/
+
+# Flyte
+flyte/.flyte/
+flyte/flyte_state/
+
+# Mage
+.mage/
+mage/mage-integrations/
+
+# Cache
+.cache/
+__cache__/
+*/__cache__/*
+.pytest_cache/
+
+# Jupyter notebooks
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# API keys and configuration
+*.key
+*_key.txt
+*credentials.json
+credentials/ 

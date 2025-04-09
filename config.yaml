@@ -1,0 +1,66 @@
+# Orchestration Tools Comparison Configuration
+
+# General Settings
+data_directory: "./data"  # Shared data directory for all projects
+raw_directory: "./data/raw"  # Directory for raw document files
+processed_directory_format: "./data/processed/{tool}_{provider}"  # Format for processed directories
+log_level: "INFO"  # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+# Text Embedding Settings
+embedding:
+  provider: "local"  # Options: "gemini", "local", "openai"
+  model: "models/embedding-001"  # The model to use for embedding (new Gemini models use full path)
+  dimension: 768  # Vector dimension for local embeddings
+  batch_size: 8  # Batch size for embedding requests
+  use_cache: true  # Cache embeddings to avoid redundant API calls
+
+# Inference Settings
+inference:
+  provider: "local"  # Options: "gemini", "local", "openai"
+  model: "gemini-2.0-flash"  # Updated to use gemini-2.0-flash instead of 1.5-pro
+  temperature: 0.2  # Temperature for response generation (0.0-1.0)
+  max_tokens: 1024  # Maximum tokens in generated response
+  stream: false  # Whether to stream responses
+
+# Library Settings
+libraries:
+  use_langchain: true  # Use LangChain for components
+  use_llama_index: false  # Use LlamaIndex for components
+
+# Document Processing
+document_processing:
+  chunk_size: 512  # Character size of chunks
+  chunk_overlap: 50  # Character overlap between chunks
+  include_metadata: true  # Include document metadata in chunks
+
+# Logging Settings
+logging:
+  log_directory: "./logs"  # Directory for storing log files
+  metrics_directory: "./logs/metrics"  # Directory for storing metrics CSV files
+  file_format: "{tool}_{provider}.log"  # Format for log files
+  metrics_format: "{tool}_{provider}_metrics.csv"  # Format for metrics CSV files
+
+# Orchestration Selection
+orchestration:
+  active_tool: "base"  # Options: "base", "airflow", "dagster", "flyte", "kubeflow", "mage"
+  run_ui: true  # Run the orchestration tool's UI if available
+  
+# Tool-specific Configurations
+airflow:
+  dag_directory: "./airflow/dags"
+  scheduler_interval: "0 0 * * *"  # Daily at midnight
+
+dagster:
+  repository_name: "nutrition_rag"
+  run_schedule: "0 0 * * *"  # Daily at midnight
+
+flyte:
+  workflow_name: "nutrition_rag_workflow"
+  domain: "development"
+
+kubeflow:
+  pipeline_name: "nutrition-rag-pipeline"
+  namespace: "kubeflow"
+
+mage:
+  project_name: "nutrition_rag" 

@@ -1,0 +1,13 @@
+# Core dependencies
+pandas
+numpy
+requests
+
+# Configuration
+python-dotenv
+pyyaml
+
+# Optional AI providers
+google-generativeai
+langchain
+langchain-google-genai
