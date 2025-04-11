@@ -139,12 +139,43 @@ class RagPipeline:
         start_time = time.time()
         
         try:
-            # Run ingestion
-            documents = self.run_ingestion()
+            # Check if we need to run the ingestion and processing steps
+            reset_collection = config.get("vector_store.reset_collection", False)
             
-            # Run processing
-            self.run_processing(documents)
+            # Check for existing data in the collection
+            skip_processing = False
+            if not reset_collection:
+                try:
+                    from vector_store import vector_store
+                    # This is a simple check to see if collection exists and has data
+                    collection_name = vector_store.collection_name
+                    try:
+                        collection_info = vector_store.client.get_collection(collection_name=collection_name)
+                        # Check if vectors_count exists and has a value greater than 0
+                        vectors_count = getattr(collection_info, 'vectors_count', None)
+                        has_data = vectors_count is not None and vectors_count > 0
+                        
+                        if has_data:
+                            logger.info(f"Collection {collection_name} exists with {vectors_count} vectors. Skipping document processing.")
+                            skip_processing = True
+                        else:
+                            logger.info(f"Collection {collection_name} exists but has no vectors. Will process documents.")
+                    except Exception as e:
+                        # If the collection doesn't exist yet, it will throw an error
+                        logger.info(f"Collection {collection_name} not found. Will create and process documents.")
+                except Exception as e:
+                    logger.info(f"Could not check collection status: {str(e)}. Will process documents.")
             
+            if not skip_processing:
+                # Run ingestion
+                documents = self.run_ingestion()
+                
+                # Run processing
+                self.run_processing(documents)
+            else:
+                logger.info("Using existing collection. Skipping document ingestion and processing.")
+                logging_util.log_stage("PROCESSING", "Skipped - using existing collection")
+                
             # Initialize query engine
             self.initialize_query_engine()
             

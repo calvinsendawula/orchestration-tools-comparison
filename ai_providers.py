@@ -8,6 +8,7 @@ for embedding and inference tasks.
 import os
 import logging
 import numpy as np
+import requests  # Add this import for direct API calls
 from typing import List, Dict, Any, Optional, Union, Callable
 from config_loader import config
 
@@ -19,15 +20,7 @@ logger = logging.getLogger(__name__)
 config_embedding_provider = config.get("embedding.provider", "local")
 config_inference_provider = config.get("inference.provider", "local")
 
-# Try to import optional dependencies
-try:
-    from google import genai
-    HAVE_GEMINI = True
-except ImportError:
-    HAVE_GEMINI = False
-    if config_embedding_provider == "gemini" or config_inference_provider == "gemini":
-        logger.warning("Google GenerativeAI not installed. Gemini provider will not be available.")
-
+# Try to import optional dependencies for LangChain integration
 try:
     from langchain.embeddings import GoogleGenerativeAIEmbeddings
     from langchain_google_genai import ChatGoogleGenerativeAI
@@ -43,8 +36,8 @@ class EmbeddingProvider:
     
     def __init__(self):
         """Initialize the embedding provider based on configuration"""
-        self.provider_name = config.get("embedding.provider", "local")
-        self.model_name = config.get("embedding.model", "embedding-001")
+        self.provider_name = config.get("embedding.provider", "gemini")
+        self.model_name = config.get("embedding.model", "models/embedding-001")
         self.embedding_dim = config.get("embedding.dimension", 768)
         self.use_langchain = config.get("libraries.use_langchain", False)
         
@@ -54,21 +47,15 @@ class EmbeddingProvider:
         elif self.provider_name == "openai":
             self._init_openai()
         else:
-            self._init_local()
+            raise ValueError(f"Unsupported embedding provider: {self.provider_name}. Use 'gemini' or 'openai'.")
         
         logger.info(f"Initialized embedding provider: {self.provider_name} (model: {self.model_name})")
     
     def _init_gemini(self):
         """Initialize Gemini embedding provider"""
-        if not HAVE_GEMINI:
-            raise ImportError("Google GenerativeAI not installed. Please install with: pip install google-generativeai")
-        
         api_key = config.get_api_key("gemini")
         if not api_key:
             raise ValueError("Gemini API key not found. Please set it in .env or config.yaml")
-        
-        # Initialize the Gemini API
-        genai.configure(api_key=api_key)
         
         if self.use_langchain and HAVE_LANGCHAIN_GEMINI:
             # Use LangChain integration if configured
@@ -78,18 +65,14 @@ class EmbeddingProvider:
             )
             self.embed_texts = self._langchain_embed_texts
         else:
-            # Use direct Gemini API with the latest client approach
-            self.gemini_client = genai.Client(api_key=api_key)
+            # Use direct API approach
+            self.gemini_api_key = api_key
             self.embed_texts = self._gemini_embed_texts
+            logger.info(f"Initialized Gemini embeddings with direct API access, model: {self.model_name}")
     
     def _init_openai(self):
         """Initialize OpenAI embedding provider"""
         raise NotImplementedError("OpenAI embedding provider not yet implemented")
-    
-    def _init_local(self):
-        """Initialize local (simulated) embedding provider"""
-        logger.warning("Using local simulated embeddings - these are not semantically meaningful")
-        self.embed_texts = self._local_embed_texts
     
     def _gemini_embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
@@ -104,24 +87,42 @@ class EmbeddingProvider:
         embeddings = []
         
         for text in texts:
-            try:
-                # Using the new client approach for embeddings
-                embedding_result = self.gemini_client.embed_content(
-                    model=self.model_name,
-                    content=text,
-                    task_type="retrieval_document",  # For document/chunk embedding
-                )
-                
-                if embedding_result and hasattr(embedding_result, "embedding"):
-                    embeddings.append(embedding_result.embedding)
-                else:
-                    # Fallback to local if API fails
-                    logger.warning(f"Gemini embedding failed, using local fallback for: {text[:50]}...")
-                    embeddings.append(self._get_local_embedding(text))
-            except Exception as e:
-                logger.error(f"Error generating Gemini embedding: {str(e)}")
-                # Fallback to local
-                embeddings.append(self._get_local_embedding(text))
+            # Use the correct API format as shown in successful tool
+            url = f"https://generativelanguage.googleapis.com/v1/models/embedding-001:embedContent?key={self.gemini_api_key}"
+            
+            # Trim text if too long (API has limits)
+            if len(text) > 25000:
+                text = text[:25000]
+                logger.warning(f"Text truncated to 25000 characters")
+            
+            # Prepare the request payload in the correct format
+            payload = {
+                "model": "models/embedding-001",
+                "content": {
+                    "parts": [
+                        {"text": text}
+                    ]
+                }
+            }
+            
+            # Make the API request with timeout
+            response = requests.post(url, json=payload, timeout=30)
+            
+            if response.status_code != 200:
+                error_message = f"Error getting embedding: {response.text}"
+                logger.error(error_message)
+                raise ValueError(error_message)
+            
+            result = response.json()
+            
+            # Extract the embedding values using the correct path
+            if "embedding" in result and "values" in result["embedding"]:
+                embedding_values = result["embedding"]["values"]
+                embeddings.append(embedding_values)
+            else:
+                error_message = f"Gemini API returned unexpected response format: {result}"
+                logger.error(error_message)
+                raise ValueError(error_message)
         
         return embeddings
     
@@ -138,42 +139,9 @@ class EmbeddingProvider:
         try:
             return self.embedding_model.embed_documents(texts)
         except Exception as e:
-            logger.error(f"Error generating LangChain embeddings: {str(e)}")
-            # Fallback to local
-            return [self._get_local_embedding(text) for text in texts]
-    
-    def _local_embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """
-        Generate simulated local embeddings
-        
-        Args:
-            texts: List of texts to embed
-            
-        Returns:
-            List of embedding vectors
-        """
-        return [self._get_local_embedding(text) for text in texts]
-    
-    def _get_local_embedding(self, text: str) -> List[float]:
-        """
-        Generate a simulated embedding vector for a text string
-        
-        Args:
-            text: Text to embed
-            
-        Returns:
-            Vector embedding as a list of floats
-        """
-        # Simple deterministic "hash" to generate consistent embeddings for the same text
-        seed = sum(ord(c) for c in text)
-        np.random.seed(seed)
-        
-        # Generate random embedding vector
-        embedding = np.random.randn(self.embedding_dim).astype(float)
-        # Normalize to unit length
-        embedding = embedding / np.linalg.norm(embedding)
-        
-        return embedding.tolist()
+            error_message = f"Error generating LangChain embeddings: {str(e)}"
+            logger.error(error_message)
+            raise ValueError(error_message)
     
     def embed_text(self, text: str) -> List[float]:
         """
@@ -218,7 +186,7 @@ class InferenceProvider:
     
     def __init__(self):
         """Initialize the inference provider based on configuration"""
-        self.provider_name = config.get("inference.provider", "local")
+        self.provider_name = config.get("inference.provider", "gemini")
         self.model_name = config.get("inference.model", "gemini-2.0-flash")
         self.temperature = config.get("inference.temperature", 0.2)
         self.max_tokens = config.get("inference.max_tokens", 1024)
@@ -230,172 +198,145 @@ class InferenceProvider:
         elif self.provider_name == "openai":
             self._init_openai()
         else:
-            self._init_local()
+            raise ValueError(f"Unsupported inference provider: {self.provider_name}. Use 'gemini' or 'openai'.")
         
         logger.info(f"Initialized inference provider: {self.provider_name} (model: {self.model_name})")
     
     def _init_gemini(self):
         """Initialize Gemini inference provider"""
-        if not HAVE_GEMINI:
-            raise ImportError("Google GenerativeAI not installed. Please install with: pip install google-generativeai")
-        
         api_key = config.get_api_key("gemini")
         if not api_key:
             raise ValueError("Gemini API key not found. Please set it in .env or config.yaml")
         
         if self.use_langchain and HAVE_LANGCHAIN_GEMINI:
             # Use LangChain integration if configured
-            self.inference_model = ChatGoogleGenerativeAI(
+            self.generate = self._langchain_generate
+            
+            # Initialize LangChain ChatGoogleGenerativeAI
+            self.llm = ChatGoogleGenerativeAI(
                 model=self.model_name,
                 google_api_key=api_key,
                 temperature=self.temperature,
-                max_output_tokens=self.max_tokens
+                max_output_tokens=self.max_tokens,
             )
-            self.generate = self._langchain_generate
         else:
-            # Use direct Gemini API with the latest client approach
-            self.gemini_client = genai.Client(api_key=api_key)
+            # Store API key for direct use
+            self.gemini_api_key = api_key
             self.generate = self._gemini_generate
+            logger.info(f"Initialized Gemini inference with direct API access, model: {self.model_name}")
     
     def _init_openai(self):
         """Initialize OpenAI inference provider"""
         raise NotImplementedError("OpenAI inference provider not yet implemented")
     
-    def _init_local(self):
-        """Initialize local (template-based) inference provider"""
-        logger.warning("Using local template-based responses - not using a real LLM")
-        self.generate = self._local_generate
-    
     def _gemini_generate(self, prompt: str, context: List[Dict[str, Any]] = None) -> str:
         """
-        Generate a response using direct Gemini API
+        Generate a response using Gemini
         
         Args:
-            prompt: The query prompt
-            context: Optional list of context documents
+            prompt: User query
+            context: List of context chunks with content and metadata
             
         Returns:
-            Generated response text
+            Generated response string
         """
-        try:
-            if context:
-                # Format context for inclusion in the prompt
-                context_text = "\n\n".join([
-                    f"Context {i+1}:\n{doc['content']}\nSource: {doc['metadata'].get('filename', 'unknown')}"
-                    for i, doc in enumerate(context)
-                ])
-                
-                full_prompt = f"""
-                Please answer the following question based on the provided context.
-                
-                {context_text}
-                
-                Question: {prompt}
-                
-                Answer:"""
-            else:
-                full_prompt = prompt
+        # Create a prompt that includes the context information
+        full_prompt = prompt
+        
+        if context and len(context) > 0:
+            full_prompt = "Context information:\n\n"
             
-            # Using the new client approach for content generation
-            response = self.gemini_client.generate_content(
-                model=self.model_name,
-                contents=full_prompt,
-                generation_config={
-                    "temperature": self.temperature,
-                    "max_output_tokens": self.max_tokens,
+            for i, ctx in enumerate(context):
+                content = ctx.get("content", "")
+                metadata = ctx.get("metadata", {})
+                source = metadata.get("filename", f"Source {i+1}")
+                
+                full_prompt += f"--- {source} ---\n{content}\n\n"
+            
+            full_prompt += f"Based on the above context, answer the following question:\n{prompt}"
+        
+        # Use direct REST API approach instead of the client library
+        url = f"https://generativelanguage.googleapis.com/v1/models/{self.model_name}:generateContent?key={self.gemini_api_key}"
+        
+        # Set up generation parameters in the correct format
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": full_prompt}
+                    ]
                 }
-            )
-            
-            if response and hasattr(response, "text"):
-                return response.text
-            else:
-                logger.warning("Gemini returned an unexpected response format")
-                return self._get_local_response(prompt, context)
-                
-        except Exception as e:
-            logger.error(f"Error generating Gemini response: {str(e)}")
-            # Fallback to local
-            return self._get_local_response(prompt, context)
+            ],
+            "generationConfig": {
+                "temperature": self.temperature,
+                "topP": 0.8,
+                "topK": 40,
+                "maxOutputTokens": self.max_tokens,
+            }
+        }
+        
+        # Make the API request with timeout
+        response = requests.post(url, json=payload, timeout=60)
+        
+        if response.status_code != 200:
+            error_message = f"Error generating Gemini response: {response.text}"
+            logger.error(error_message)
+            raise ValueError(error_message)
+        
+        result = response.json()
+        
+        # Extract the generated text from the response using correct path
+        if "candidates" in result and len(result["candidates"]) > 0:
+            candidate = result["candidates"][0]
+            if "content" in candidate and "parts" in candidate["content"]:
+                parts = candidate["content"]["parts"]
+                if parts and "text" in parts[0]:
+                    return parts[0]["text"]
+        
+        # If we couldn't extract the text, raise an error
+        error_message = f"Failed to parse Gemini response: {result}"
+        logger.error(error_message)
+        raise ValueError(error_message)
     
     def _langchain_generate(self, prompt: str, context: List[Dict[str, Any]] = None) -> str:
         """
         Generate a response using LangChain integration
         
         Args:
-            prompt: The query prompt
-            context: Optional list of context documents
+            prompt: User query
+            context: List of context chunks with content and metadata
             
         Returns:
-            Generated response text
+            Generated response string
         """
-        try:
-            if context:
-                # Format context for inclusion in the prompt
-                context_text = "\n\n".join([
-                    f"Context {i+1}:\n{doc['content']}\nSource: {doc['metadata'].get('filename', 'unknown')}"
-                    for i, doc in enumerate(context)
-                ])
-                
-                full_prompt = f"""
-                Please answer the following question based on the provided context.
-                
-                {context_text}
-                
-                Question: {prompt}
-                
-                Answer:"""
-            else:
-                full_prompt = prompt
+        # Prepare context information
+        context_text = ""
+        if context and len(context) > 0:
+            context_text = "Context information:\n\n"
             
-            return self.inference_model.invoke(full_prompt)
-            
-        except Exception as e:
-            logger.error(f"Error generating LangChain response: {str(e)}")
-            # Fallback to local
-            return self._get_local_response(prompt, context)
-    
-    def _local_generate(self, prompt: str, context: List[Dict[str, Any]] = None) -> str:
-        """
-        Generate a template-based response locally
+            for i, ctx in enumerate(context):
+                content = ctx.get("content", "")
+                metadata = ctx.get("metadata", {})
+                source = metadata.get("filename", f"Source {i+1}")
+                
+                context_text += f"--- {source} ---\n{content}\n\n"
         
-        Args:
-            prompt: The query prompt
-            context: Optional list of context documents
-            
-        Returns:
-            Generated response text
-        """
-        return self._get_local_response(prompt, context)
-    
-    def _get_local_response(self, prompt: str, context: List[Dict[str, Any]] = None) -> str:
-        """
-        Generate a template-based response when real inference isn't available
+        # Construct the full prompt
+        if context_text:
+            full_prompt = f"{context_text}\n\nBased on the above context, answer the following question:\n{prompt}"
+        else:
+            full_prompt = prompt
         
-        Args:
-            prompt: The query prompt
-            context: Optional list of context documents
-            
-        Returns:
-            Template-based response text
-        """
-        if not context:
-            return f"I don't have enough information to answer the question: '{prompt}'"
+        # Generate response
+        response = self.llm.invoke(full_prompt)
         
-        # Start with a simple template response
-        response = f"Here's what I found about '{prompt}':\n\n"
-        
-        # Add content from each context document
-        for i, doc in enumerate(context):
-            # Add chunk content to response
-            response += f"Information {i+1}:\n"
-            response += f"{doc['content']}\n\n"
-            response += f"Source: {doc['metadata'].get('filename', 'unknown')}\n\n"
-        
-        response += "This information should help answer your question."
-        
-        return response
+        # Extract content based on the response structure
+        if hasattr(response, "content"):
+            return response.content
+        else:
+            return str(response)
 
-# Create global instances
+# Initialize global providers
 embedding_provider = EmbeddingProvider()
 inference_provider = InferenceProvider()
 

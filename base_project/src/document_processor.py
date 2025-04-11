@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional, Tuple
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from config_loader import config
 from ai_providers import embedding_provider
+from vector_store import vector_store
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -102,64 +103,34 @@ class DocumentProcessor:
                 
                 # Use our embedding provider
                 embedding = embedding_provider.embed_text(chunk["content"])
-                embeddings[chunk_id] = embedding
                 
-                # Add the embedding reference to the chunk metadata
-                chunk["metadata"]["embedding_id"] = chunk_id
+                # Ensure embedding is properly serializable (convert to list of float)
+                if embedding:
+                    # Convert any numpy arrays or special types to plain Python lists of floats
+                    embedding = [float(value) for value in embedding]
+                    embeddings[chunk_id] = embedding
+                
+                    # Add the embedding reference to the chunk metadata
+                    chunk["metadata"]["embedding_id"] = chunk_id
         
-        # Save chunks and embeddings
-        self._save_processed_data(all_chunks, embeddings)
+        # Store chunks and embeddings in the vector store
+        vector_store.store_embeddings(all_chunks, embeddings)
         
         return all_chunks, embeddings
     
-    def _save_processed_data(self, chunks: List[Dict[str, Any]], embeddings: Dict[str, List[float]]) -> None:
-        """
-        Save processed chunks and embeddings to disk
-        
-        Args:
-            chunks: List of processed document chunks
-            embeddings: Dictionary mapping chunk IDs to embeddings
-        """
-        # Save chunks
-        chunks_file = os.path.join(self.output_dir, "chunks.json")
-        with open(chunks_file, 'w', encoding='utf-8') as f:
-            json.dump(chunks, f, ensure_ascii=False, indent=2)
-        
-        # Save embeddings
-        embeddings_file = os.path.join(self.output_dir, "embeddings.json")
-        with open(embeddings_file, 'w', encoding='utf-8') as f:
-            json.dump(embeddings, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"Saved {len(chunks)} chunks and {len(embeddings)} embeddings to {self.output_dir}")
-    
     def load_processed_data(self) -> Tuple[List[Dict[str, Any]], Dict[str, List[float]]]:
         """
-        Load previously processed chunks and embeddings from disk
+        Load previously processed chunks and embeddings
         
         Returns:
             Tuple of (chunked documents, embeddings dictionary)
         """
-        chunks = []
-        embeddings = {}
-        
-        # Load chunks
-        chunks_file = os.path.join(self.output_dir, "chunks.json")
-        if os.path.exists(chunks_file):
-            with open(chunks_file, 'r', encoding='utf-8') as f:
-                chunks = json.load(f)
+        # Use the vector store to load chunks and embeddings
+        if vector_store.provider_name == "local":
+            return vector_store.load_embeddings()
         else:
-            logger.warning(f"Chunks file not found at {chunks_file}")
-        
-        # Load embeddings
-        embeddings_file = os.path.join(self.output_dir, "embeddings.json")
-        if os.path.exists(embeddings_file):
-            with open(embeddings_file, 'r', encoding='utf-8') as f:
-                embeddings = json.load(f)
-        else:
-            logger.warning(f"Embeddings file not found at {embeddings_file}")
-        
-        logger.info(f"Loaded {len(chunks)} chunks and {len(embeddings)} embeddings from {self.output_dir}")
-        return chunks, embeddings
+            # For non-local stores, we use an empty list and dict as we don't need to preload data
+            return [], {}
 
 if __name__ == "__main__":
     # Test the document processor with some sample data

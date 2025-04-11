@@ -8,16 +8,30 @@ log_level: "INFO"  # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 # Text Embedding Settings
 embedding:
-  provider: "local"  # Options: "gemini", "local", "openai"
+  provider: "gemini"  # Options: "gemini", "local", "openai"
   model: "models/embedding-001"  # The model to use for embedding (new Gemini models use full path)
   dimension: 768  # Vector dimension for local embeddings
   batch_size: 8  # Batch size for embedding requests
   use_cache: true  # Cache embeddings to avoid redundant API calls
 
+# Vector Store Settings
+vector_store:
+  provider: "qdrant"  # Options: "qdrant", "local"
+  collection_name_format: "{tool}_{provider}_nutrition"  # Format for collection names
+  reset_collection: false  # Whether to reset the collection if it exists
+  create_collection: true  # Whether to create the collection if it doesn't exist
+
+# Qdrant Settings
+qdrant:
+  default_collection_name: "base_gemini_nutrition"  # Default collection name if format isn't specified
+  distance: "Cosine"  # Distance function to use
+  on_disk: true  # Whether to store vectors on disk (in Qdrant cloud)
+  vector_dimension: 768  # Dimension of vectors to store
+
 # Inference Settings
 inference:
-  provider: "local"  # Options: "gemini", "local", "openai"
-  model: "gemini-2.0-flash"  # Updated to use gemini-2.0-flash instead of 1.5-pro
+  provider: "gemini"  # Options: "gemini", "local", "openai"
+  model: "gemini-2.0-flash"  # Updated to use gemini-2.0-flash
   temperature: 0.2  # Temperature for response generation (0.0-1.0)
   max_tokens: 1024  # Maximum tokens in generated response
   stream: false  # Whether to stream responses
@@ -64,4 +78,17 @@ kubeflow:
 
 mage:
   project_name: "nutrition_rag"
+
+
+
+
+
+
+
+
+
+
+
+
+
 
