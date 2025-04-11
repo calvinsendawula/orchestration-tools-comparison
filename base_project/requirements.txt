@@ -8,6 +8,9 @@ python-dotenv
 pyyaml
 
 # Optional AI providers
-google-generativeai
+google-genai
 langchain
 langchain-google-genai
+
+# Vector Store
+qdrant-client

@@ -2,7 +2,8 @@
 param (
     [string]$Tool = "base",
     [string]$Query = "",
-    [switch]$UI = $false
+    [switch]$UI = $false,
+    [switch]$Reset = $false
 )
 
 # Helper functions
@@ -25,16 +26,18 @@ function Show-Header {
 }
 
 function Show-Usage {
-    Write-ColorOutput "Yellow" "Usage: .\run.ps1 [-Tool <tool>] [-Query <query>] [-UI]"
+    Write-ColorOutput "Yellow" "Usage: .\run.ps1 [-Tool <tool>] [-Query <query>] [-UI] [-Reset]"
     Write-ColorOutput "Yellow" "  -Tool   : Orchestration tool to use (base, airflow, dagster, flyte, kubeflow, mage)"
     Write-ColorOutput "Yellow" "  -Query  : Query to run against the RAG pipeline"
     Write-ColorOutput "Yellow" "  -UI     : Start the orchestration tool's UI if available"
+    Write-ColorOutput "Yellow" "  -Reset  : Reset the vector database collection (will delete existing data)"
     Write-ColorOutput "Yellow" "Examples:"
     Write-ColorOutput "Yellow" "  .\run.ps1 -Tool base -Query 'What are good sources of protein?'"
     Write-ColorOutput "Yellow" "  .\run.ps1 -Tool dagster -UI"
+    Write-ColorOutput "Yellow" "  .\run.ps1 -Tool base -Reset"
 }
 
-function Check-Python {
+function Test-Python {
     try {
         $pythonVersion = python --version
         Write-ColorOutput "Cyan" "Using $pythonVersion"
@@ -45,7 +48,7 @@ function Check-Python {
     }
 }
 
-function Check-Requirements {
+function Test-Requirements {
     if (-not (Test-Path -Path "requirements.txt")) {
         Write-ColorOutput "Yellow" "Main requirements.txt not found. Creating empty file."
         "" | Out-File -FilePath "requirements.txt"
@@ -66,22 +69,36 @@ except ImportError:
 
 function Update-Config {
     param (
-        [string]$Tool
+        [string]$Tool,
+        [switch]$Reset
     )
     
     # Update the active tool in the config
     # This is a simple approach; in a more sophisticated setup we'd use the YAML parser
     if (Test-Path -Path "config.yaml") {
         $content = Get-Content -Path "config.yaml" -Raw
+        
+        # Update active tool
         $pattern = "active_tool: `"(.*?)`""
         $replacement = "active_tool: `"$Tool`""
         $newContent = $content -replace $pattern, $replacement
+        
+        # Update reset_collection flag
+        $resetValue = if ($Reset) { "true" } else { "false" }
+        $pattern = "reset_collection: (true|false)"
+        $replacement = "reset_collection: $resetValue"
+        $newContent = $newContent -replace $pattern, $replacement
+        
         $newContent | Out-File -FilePath "config.yaml" -Encoding utf8
         Write-ColorOutput "Cyan" "Updated active tool to: $Tool"
+        
+        if ($Reset) {
+            Write-ColorOutput "Yellow" "Reset flag set. Vector database collection will be reset."
+        }
     }
 }
 
-function Run-BaseProject {
+function Start-BaseProject {
     param (
         [string]$Query
     )
@@ -94,7 +111,7 @@ function Run-BaseProject {
     python base_project/src/pipeline.py "$Query"
 }
 
-function Run-Airflow {
+function Start-Airflow {
     param (
         [switch]$UI
     )
@@ -115,7 +132,7 @@ function Run-Airflow {
     }
 }
 
-function Run-Dagster {
+function Start-Dagster {
     param (
         [switch]$UI
     )
@@ -135,7 +152,7 @@ function Run-Dagster {
     }
 }
 
-function Run-Flyte {
+function Start-Flyte {
     param (
         [switch]$UI
     )
@@ -153,7 +170,7 @@ function Run-Flyte {
     }
 }
 
-function Run-Kubeflow {
+function Start-Kubeflow {
     param (
         [switch]$UI
     )
@@ -167,7 +184,7 @@ function Run-Kubeflow {
     Write-ColorOutput "Yellow" "Please refer to the kubeflow/README.md for detailed instructions."
 }
 
-function Run-Mage {
+function Start-Mage {
     param (
         [switch]$UI
     )
@@ -193,35 +210,35 @@ function Run-Mage {
 Show-Header
 
 # Check Python is available
-if (-not (Check-Python)) {
+if (-not (Test-Python)) {
     exit 1
 }
 
 # Check and install basic requirements
-Check-Requirements
+Test-Requirements
 
 # Update configuration if needed
-Update-Config -Tool $Tool
+Update-Config -Tool $Tool -Reset:$Reset
 
 # Run the selected tool
 switch ($Tool.ToLower()) {
     "base" {
-        Run-BaseProject -Query $Query
+        Start-BaseProject -Query $Query
     }
     "airflow" {
-        Run-Airflow -UI:$UI
+        Start-Airflow -UI:$UI
     }
     "dagster" {
-        Run-Dagster -UI:$UI
+        Start-Dagster -UI:$UI
     }
     "flyte" {
-        Run-Flyte -UI:$UI
+        Start-Flyte -UI:$UI
     }
     "kubeflow" {
-        Run-Kubeflow -UI:$UI
+        Start-Kubeflow -UI:$UI
     }
     "mage" {
-        Run-Mage -UI:$UI
+        Start-Mage -UI:$UI
     }
     default {
         Write-ColorOutput "Red" "Unknown tool: $Tool"

@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional, Tuple
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from config_loader import config
 from ai_providers import embedding_provider, inference_provider
+from vector_store import vector_store
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,39 +26,8 @@ class QueryEngine:
         # Get processed directory from config
         self.processed_dir = config.get_processed_directory()
         
-        # Load processed data
-        self.chunks, self.embeddings = self._load_data()
-        
-        logger.info(f"Initialized query engine with {len(self.chunks)} chunks and {len(self.embeddings)} embeddings")
-    
-    def _load_data(self) -> Tuple[List[Dict[str, Any]], Dict[str, List[float]]]:
-        """
-        Load chunks and embeddings from disk
-        
-        Returns:
-            Tuple of (chunked documents, embeddings dictionary)
-        """
-        chunks = []
-        embeddings = {}
-        
-        # Load chunks
-        chunks_file = os.path.join(self.processed_dir, "chunks.json")
-        if os.path.exists(chunks_file):
-            with open(chunks_file, 'r', encoding='utf-8') as f:
-                chunks = json.load(f)
-        else:
-            logger.warning(f"Chunks file not found at {chunks_file}")
-        
-        # Load embeddings
-        embeddings_file = os.path.join(self.processed_dir, "embeddings.json")
-        if os.path.exists(embeddings_file):
-            with open(embeddings_file, 'r', encoding='utf-8') as f:
-                embeddings = json.load(f)
-        else:
-            logger.warning(f"Embeddings file not found at {embeddings_file}")
-        
-        logger.info(f"Loaded {len(chunks)} chunks and {len(embeddings)} embeddings from {self.processed_dir}")
-        return chunks, embeddings
+        # Vector store now handles loading data as needed
+        logger.info(f"Initialized query engine with {vector_store.provider_name} vector store")
     
     def retrieve_relevant_chunks(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
@@ -70,37 +40,13 @@ class QueryEngine:
         Returns:
             List of relevant chunks with similarity scores
         """
-        if not self.chunks or not self.embeddings:
-            logger.warning("No chunks or embeddings available for retrieval")
-            return []
-        
         # Embed the query using the same provider used for documents
         query_embedding = embedding_provider.embed_text(query)
         
-        # Calculate similarity for each chunk
-        chunk_similarities = []
-        for chunk in self.chunks:
-            embedding_id = chunk["metadata"].get("embedding_id")
-            if embedding_id and embedding_id in self.embeddings:
-                doc_embedding = self.embeddings[embedding_id]
-                
-                # Calculate cosine similarity
-                query_vec = np.array(query_embedding)
-                doc_vec = np.array(doc_embedding)
-                similarity = np.dot(query_vec, doc_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(doc_vec))
-                
-                # Add chunk with similarity score
-                chunk_with_score = {
-                    "chunk": chunk,
-                    "similarity": float(similarity)
-                }
-                chunk_similarities.append(chunk_with_score)
-        
-        # Sort by similarity (highest first) and take top k
-        relevant_chunks = sorted(chunk_similarities, key=lambda x: x["similarity"], reverse=True)[:top_k]
-        
-        logger.info(f"Retrieved {len(relevant_chunks)} relevant chunks for query: {query}")
-        return relevant_chunks
+        # Search using the vector store's interface
+        # With our updated vector_store implementation, the interface is now consistent
+        # for both local and Qdrant backends
+        return vector_store.search_embeddings(query_embedding, top_k=top_k)
     
     def generate_response(self, query: str, relevant_chunks: List[Dict[str, Any]]) -> str:
         """

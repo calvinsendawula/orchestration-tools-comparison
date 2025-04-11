@@ -50,12 +50,48 @@ class ConfigLoader:
     def _load_yaml_config(self) -> None:
         """Load configuration from YAML file"""
         try:
-            with open(self.config_path, 'r') as f:
-                self.config = yaml.safe_load(f)
+            # Read the file content first with explicit UTF-8 encoding
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Check for and remove UTF-8 BOM if present
+            if content.startswith('\ufeff'):
+                content = content[1:]
+                logger.info("Removed UTF-8 BOM from config file")
+            
+            # Remove any leading whitespace
+            content = content.lstrip()
+            
+            # Validate that the content starts correctly
+            if not content.startswith("#") and not content.startswith("---"):
+                # Add YAML document start marker if missing
+                content = "---\n" + content
+                logger.info("Added YAML document start marker")
+            
+            # Parse the sanitized content
+            self.config = yaml.safe_load(content)
             logger.info(f"Loaded configuration from {self.config_path}")
+            
         except FileNotFoundError:
             logger.error(f"Configuration file {self.config_path} not found")
             self.config = {}
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing YAML configuration: {str(e)}")
+            # Try to load with a more permissive parser as fallback
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                # Try with PyYAML's round-trip loader which is more permissive
+                from yaml import load
+                try:
+                    from yaml import CSafeLoader as Loader
+                except ImportError:
+                    from yaml import SafeLoader as Loader
+                self.config = load(content, Loader=Loader)
+                logger.info("Loaded configuration using fallback YAML parser")
+            except Exception as fallback_error:
+                logger.error(f"Fallback YAML parsing also failed: {str(fallback_error)}")
+                self.config = {}
         except Exception as e:
             logger.error(f"Error loading configuration: {str(e)}")
             self.config = {}
